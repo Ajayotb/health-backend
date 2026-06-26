@@ -1,9 +1,71 @@
 import joblib
 import numpy as np
+import os
+import base64
+import pickle
 
-# Load model and scaler
-model = joblib.load('health_model.pkl')
-scaler = joblib.load('scaler.pkl')
+def download_model():
+    """Download model from Google Drive on startup"""
+    model_path = 'health_model.pkl'
+
+    # If already exists locally skip download
+    if os.path.exists(model_path):
+        print("✅ Model file found locally")
+        return model_path
+
+    try:
+        import urllib.request
+        file_id = "165eYKChidh_V_Q1v2yToDSa3JATPE2Qj"
+        url = f"https://drive.google.com/uc?export=download&id={file_id}"
+        print("⬇️ Downloading model from Google Drive...")
+        urllib.request.urlretrieve(url, model_path)
+        print("✅ Model downloaded successfully")
+        return model_path
+    except Exception as e:
+        print(f"❌ Failed to download model: {e}")
+        return None
+
+def load_scaler():
+    """Load scaler from environment variable"""
+    scaler_b64 = os.environ.get('SCALER_B64')
+    if scaler_b64:
+        try:
+            scaler_bytes = base64.b64decode(scaler_b64.encode('utf-8'))
+            scaler = pickle.loads(scaler_bytes)
+            print("✅ Scaler loaded from environment variable")
+            return scaler
+        except Exception as e:
+            print(f"❌ Failed to load scaler from env: {e}")
+
+    # Fall back to local file
+    if os.path.exists('scaler.pkl'):
+        print("✅ Scaler loaded from local file")
+        return joblib.load('scaler.pkl')
+
+    print("❌ No scaler found")
+    return None
+
+# Load model and scaler on startup
+model_path = download_model()
+MODEL_AVAILABLE = False
+
+try:
+    if model_path:
+        model = joblib.load(model_path)
+        scaler = load_scaler()
+        if model is not None and scaler is not None:
+            MODEL_AVAILABLE = True
+            print("✅ All models loaded successfully")
+        else:
+            model = None
+            scaler = None
+    else:
+        model = None
+        scaler = None
+except Exception as e:
+    print(f"❌ Error loading models: {e}")
+    model = None
+    scaler = None
 
 RISK_LABELS = {
     0: "Normal",
@@ -181,11 +243,15 @@ def predict_risk(heart_rate, spo2, steps, sleep_hours,
     )
 
     # ML model prediction
-    features = np.array([[heart_rate, spo2, steps, sleep_hours, activity_encoded]])
-    features_scaled = scaler.transform(features)
-    ml_prediction = model.predict(features_scaled)[0]
-    ml_probability = model.predict_proba(features_scaled)[0]
-    confidence_score = float(max(ml_probability)) * 100
+    if MODEL_AVAILABLE and model is not None and scaler is not None:
+        features = np.array([[heart_rate, spo2, steps, sleep_hours, activity_encoded]])
+        features_scaled = scaler.transform(features)
+        ml_prediction = model.predict(features_scaled)[0]
+        ml_probability = model.predict_proba(features_scaled)[0]
+        confidence_score = float(max(ml_probability)) * 100
+    else:
+        ml_prediction = rule_prediction
+        confidence_score = 85.0
 
     # Smart combining logic
     if has_baseline and rule_prediction == 0:
