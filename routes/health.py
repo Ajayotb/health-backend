@@ -208,3 +208,19 @@ def delete_user(user_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     return {"message": f"User {user_id} and all their data deleted successfully"}
+
+@router.get("/export")
+def export_all_readings(db: Session = Depends(get_db)):
+    readings = db.query(HealthReading).all()
+    return [{
+        "id": r.id,
+        "user_id": r.user_id,
+        "heart_rate": round(r.heart_rate, 1),
+        "spo2": round(r.spo2, 1),
+        "steps": int(r.steps),
+        "sleep_hours": round(r.sleep_hours, 1),
+        "activity_level": r.activity_level,
+        "risk_level": r.risk_level,
+        "confidence": round(r.confidence, 1),
+        "timestamp": r.timestamp
+    } for r in readings]
